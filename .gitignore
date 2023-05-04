@@ -3,11 +3,17 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# datasets/results
+data/
+temp/
+wandb/
+
 # C extensions
 *.so
 
 # Distribution / packaging
 .Python
+.ipynb_checkpoints/
 build/
 develop-eggs/
 dist/
