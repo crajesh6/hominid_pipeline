@@ -153,20 +153,20 @@ def tune_mnist(num_training_iterations):
             num_samples=200,
         ),
         run_config=air.RunConfig(
-            name="tune_hominid_pipeline-test",
+            name="tune_hominid_pipeline-exp",
             stop={
                 "val_pearson_r": 0.95,
                 "training_iteration": num_training_iterations
             },
             callbacks=[
             WandbLoggerCallback(
-                project="raytune-hominid_pipeline-test",
+                project="raytune-hominid_pipeline-exp",
                 log_config=True,
                 upload_checkpoints=True,)]
             ),
         param_space={
-            "conv1_activation": tune.choice(["relu"]),                     # activation on 1st layer conv
-            "conv1_batchnorm": tune.choice([False]),                       # batchnorm on 1st layer conv
+            "conv1_activation": tune.choice(["exponential"]),                     # activation on 1st layer conv
+            "conv1_batchnorm": tune.choice([True, False]),                       # batchnorm on 1st layer conv
             "conv1_channel_weight": tune.choice(["softconv", "se", None]), # soft attention on channels (1st layer conv)
             "conv1_dropout": 0.2,
             "conv1_filters": tune.choice([64, 96, 128, 256, 512]),

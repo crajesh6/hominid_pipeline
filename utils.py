@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import os
 from pathlib import Path
+import pickle
 
 from filelock import FileLock
 import tensorflow as tf
@@ -332,6 +333,131 @@ def filter_max_align_batch(X, model, layer=3, window=24, threshold=0.5, batch_si
       W.append(np.ones((window,A))/A)
     counts.append(counter)
   return np.array(W), np.array(counts)
+
+
+def calculate_filter_activations(
+    model,
+    x_test,
+    params_path,
+    layer,
+    threshold,
+    window,
+    batch_size=64,
+    plot_filters=False,
+    from_saved=False
+    ):
+    """Calculate filter activations and return the final results."""
+    filters_path = os.path.join(params_path, 'filters')
+
+    if from_saved == False:
+        make_directory(filters_path)
+
+        print("Making intermediate predictions...")
+
+        # Get the intermediate layer model
+        intermediate = tf.keras.Model(inputs=model.inputs, outputs=model.layers[layer].output)
+
+        # Open the file to append predictions
+        predictions_file = f'{filters_path}/filters_{layer}.pkl'
+
+        # Remove the file if it already exists:
+        path = Path(predictions_file)
+        if path.is_file():
+            sh.rm(predictions_file)
+
+        with open(predictions_file, 'ab') as file:
+            # Iterate over batches
+            for batch in batch_generator(x_test, batch_size):
+                # Get predictions for the batch
+                batch_predictions = intermediate.predict(batch)
+
+                # Append predictions to the pickle file
+                pickle.dump(batch_predictions, file)
+
+        # Load predictions from the pickle file
+        fmap = load_predictions_from_file(predictions_file)
+
+        # Concatenate the predictions into a single array
+        fmap = np.concatenate(fmap, axis=0)
+
+        # Perform further calculations on fmap
+        print("Calculating filter activations...")
+        W, counts = activation_pwm(fmap, x_test, threshold=threshold, window=window)
+
+        # Clip filters for TomTom
+        W_clipped = utils.clip_filters(W, threshold=0.5, pad=3)
+        moana.meme_generate(W_clipped, output_file=f"{filters_path}/filters_{layer}.txt")
+
+        # save filter PWMs to an h5 file
+        with h5py.File(f"{filters_path}/filters_{layer}.h5", "w") as f:
+            dset = f.create_dataset(name="filters", data=W, dtype='float32')
+            dset = f.create_dataset(name="counts", data=counts, dtype='float32')
+
+        # write jaspar file for RSAT:
+        print("Writing output for RSAT...")
+        output_file = f"{filters_path}/filters_{layer}_hits.jaspar"
+
+        path = Path(output_file)
+        if path.is_file():
+            sh.rm(output_file)
+
+        # get the position frequency matrix
+        pfm = np.array([W[i] * counts[i] for i in range(len(counts))])
+
+        # write jaspar file for RSAT:
+        write_filters_jaspar(output_file, pfm)
+
+    # Load filter PWMs, counts from an h5 file
+    print("Loading filters...")
+    with h5py.File(f"{filters_path}/filters_{layer}.h5", "r") as f:
+        W = f["filters"][:]
+        counts = f["filters"][:]
+
+    # Plot filters
+    if plot_filters:
+        print("Plotting filters...")
+        filters_fig_path = os.path.join(filters_path, f'filters_{layer}.pdf')
+        plot_filters_and_return_path(W, filters_fig_path)
+
+    return W, counts
+
+def plot_filters_and_return_path(W, filters_fig_path):
+    """Plot filters and return the path to the saved figure."""
+    # Check if batches have all elements not equal to 0.25
+    batch_flags = np.all(W != 0.25, axis=2)
+
+    # Find the indices of batches with all elements not equal to 0.25
+    batch_indices = np.where(batch_flags.sum(axis=-1))[0]
+
+    # Select batches from the original array
+    sub_W = W[batch_indices]
+    num_plot = len(sub_W)
+
+    # Plot filters
+    fig = plt.figure(figsize=(20, num_plot // 10))
+    W_df = impress.plot_filters(sub_W, fig, num_cols=10, fontsize=12, names=batch_indices)
+
+    fig.savefig(filters_fig_path, format='pdf', dpi=200, bbox_inches='tight')
+
+    return
+
+def batch_generator(data, batch_size):
+    """Generate batches from data."""
+    num_batches = len(data) // batch_size
+    for i in tqdm(range(num_batches)):
+        yield data[i * batch_size : (i + 1) * batch_size]
+
+def load_predictions_from_file(file_path):
+    """Load predictions from a pickle file."""
+    predictions = []
+    with open(file_path, 'rb') as file:
+        while True:
+            try:
+                batch_predictions = pickle.load(file)
+                predictions.append(batch_predictions)
+            except EOFError:
+                break
+    return predictions
 
 
 def activation_pwm(fmap, X, threshold=0.5, window=20):
