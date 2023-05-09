@@ -16,7 +16,7 @@ import wandb
 from wandb.keras import WandbCallback
 import yaml
 
-from hominid import model_zoo, utils
+import model_zoo, utils
 import logomaker
 import tfomics
 from tfomics import impress, explain, moana
@@ -24,6 +24,33 @@ from tfomics import impress, explain, moana
 from scipy import stats
 from scipy.stats import spearmanr
 from sklearn.metrics import mean_squared_error
+
+
+def make_directory(dir_name: str):
+    Path(dir_name).mkdir(parents=True, exist_ok=True)
+    return
+
+def Spearman(y_true, y_pred):
+     return ( tf.py_function(spearmanr, [tf.cast(y_pred, tf.float32),
+                       tf.cast(y_true, tf.float32)], Tout = tf.float32) )
+from keras import backend as K
+
+def pearson_r(y_true, y_pred):
+    # use smoothing for not resulting in NaN values
+    # pearson correlation coefficient
+    # https://github.com/WenYanger/Keras_Metrics
+    epsilon = 10e-5
+    x = y_true
+    y = y_pred
+    mx = K.mean(x)
+    my = K.mean(y)
+    xm, ym = x - mx, y - my
+    r_num = K.sum(xm * ym)
+    x_square_sum = K.sum(xm * xm)
+    y_square_sum = K.sum(ym * ym)
+    r_den = K.sqrt(x_square_sum * y_square_sum)
+    r = r_num / (r_den + epsilon)
+    return K.mean(r)
 
 # create functions
 def summary_statistics(model, X, Y):
@@ -63,15 +90,15 @@ def evaluate_model(model, X, Y, task):
     pcc = stats.pearsonr(Y[:, i], pred)[0]
     scc = stats.spearmanr(Y[:, i], pred)[0]
 
-    print(f"{task} MSE = {str('{0:0.2f}'.format(mse))}")
-    print(f"{task} PCC = {str('{0:0.2f}'.format(pcc))}")
-    print(f"{task} SCC = {str('{0:0.2f}'.format(scc))}")
+    print(f"{task} MSE = {str('{0:0.3f}'.format(mse))}")
+    print(f"{task} PCC = {str('{0:0.3f}'.format(pcc))}")
+    print(f"{task} SCC = {str('{0:0.3f}'.format(scc))}")
 
     return mse, pcc, scc
 
 def load_deepstarr_data(
-        data_dir: str,
         data_split: str,
+        data_dir='/home/chandana/projects/hominid_pipeline/data/deepstarr_data.h5',
         subsample: bool = False
     ) -> (np.ndarray, np.ndarray):
     """Load dataset"""
@@ -92,6 +119,36 @@ def load_deepstarr_data(
             x = x[:10000]
             y = y[:10000]
     return x, y
+
+def hominid_pipeline(config):
+
+    # ==============================================================================
+    # Load dataset
+    # ==============================================================================
+
+    x_train, y_train = load_deepstarr_data("train", subsample=False)
+    x_valid, y_valid = load_deepstarr_data("valid", subsample=False)
+    x_test, y_test = load_deepstarr_data("test", subsample=False)
+
+    N, L, A = x_train.shape
+    output_shape = y_train.shape[-1]
+
+    print(f"Input shape: {N, L, A}. Output shape: {output_shape}")
+
+    config["input_shape"] = (L, A)
+    config["output_shape"] = output_shape
+
+    print(output_shape)
+
+    # ==============================================================================
+    # Build model
+    # ==============================================================================
+
+    print("Building model...")
+
+    model = model_zoo.base_model(**config)
+
+    return x_train, y_train, x_valid, y_valid, x_test, y_test, model
 
 def absmaxND(a, axis=None):
     amax = np.max(a, axis)
