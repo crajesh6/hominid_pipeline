@@ -1,0 +1,4 @@
+python train.py --config_file=/home/chandana/projects/hominid_pipeline/experiments/conv_pw_se/exponential/task_specific/config.yaml
+python train.py --config_file=/home/chandana/projects/hominid_pipeline/experiments/conv_pw_softconv/exponential/task_specific/config.yaml
+python train.py --config_file=/home/chandana/projects/hominid_pipeline/experiments/conv_pw_se/relu/task_specific/config.yaml
+python train.py --config_file=/home/chandana/projects/hominid_pipeline/experiments/conv_pw_softconv/relu/task_specific/config.yaml

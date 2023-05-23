@@ -7,6 +7,16 @@ __pycache__/
 data/
 temp/
 wandb/
+experiments/
+save/
+
+interpret_hominid.ipynb
+refactor.ipynb
+tune_hominid.ipynb
+parse_html_file.ipynb
+scratch.ipynb
+
+rsat.sif
 
 # C extensions
 *.so

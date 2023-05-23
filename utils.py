@@ -17,7 +17,7 @@ import wandb
 from wandb.keras import WandbCallback
 import yaml
 
-import model_zoo, utils
+import model_zoo, utils # remove the from
 import logomaker
 import tfomics
 from tfomics import impress, explain, moana
@@ -377,6 +377,12 @@ def calculate_filter_activations(
         # Load predictions from the pickle file
         fmap = load_predictions_from_file(predictions_file)
 
+        # Remove predictions file:
+        path = Path(predictions_file)
+        if path.is_file():
+            print("Now removing the predictions file!")
+            sh.rm(predictions_file)
+
         # Concatenate the predictions into a single array
         fmap = np.concatenate(fmap, axis=0)
 
@@ -384,13 +390,25 @@ def calculate_filter_activations(
         print("Calculating filter activations...")
         W, counts = activation_pwm(fmap, x_test, threshold=threshold, window=window)
 
+        # Filter out empty filters:
+        # Check if batches have all elements not equal to 0.25
+        batch_flags = np.all(W != 0.25, axis=2)
+
+        # Find the indices of batches with all elements not equal to 0.25
+        batch_indices = np.where(batch_flags.sum(axis=-1))[0]
+        print(f"Learned filters : empty filters = {len(batch_indices)} : {len(W)}")
+
+        # Select batches from the original array
+        sub_W = W[batch_indices]
+
         # Clip filters for TomTom
-        W_clipped = utils.clip_filters(W, threshold=0.5, pad=3)
+        W_clipped = utils.clip_filters(sub_W, threshold=0.5, pad=3)
         moana.meme_generate(W_clipped, output_file=f"{filters_path}/filters_{layer}.txt")
 
         # save filter PWMs to an h5 file
         with h5py.File(f"{filters_path}/filters_{layer}.h5", "w") as f:
             dset = f.create_dataset(name="filters", data=W, dtype='float32')
+            dset = f.create_dataset(name="filters_subset", data=sub_W, dtype='float32')
             dset = f.create_dataset(name="counts", data=counts, dtype='float32')
 
         # write jaspar file for RSAT:
@@ -405,12 +423,13 @@ def calculate_filter_activations(
         pfm = np.array([W[i] * counts[i] for i in range(len(counts))])
 
         # write jaspar file for RSAT:
-        write_filters_jaspar(output_file, pfm)
+        write_filters_jaspar(output_file, pfm, batch_indices)
 
     # Load filter PWMs, counts from an h5 file
     print("Loading filters...")
     with h5py.File(f"{filters_path}/filters_{layer}.h5", "r") as f:
         W = f["filters"][:]
+        sub_W = f["filters_subset"][:]
         counts = f["filters"][:]
 
     # Plot filters
@@ -419,9 +438,9 @@ def calculate_filter_activations(
         filters_fig_path = os.path.join(filters_path, f'filters_{layer}.pdf')
         plot_filters_and_return_path(W, filters_fig_path)
 
-    return W, counts
+    return W, sub_W, counts
 
-def plot_filters_and_return_path(W, filters_fig_path):
+def plot_filters_and_return_path(W, filters_fig_path, threshold=True):
     """Plot filters and return the path to the saved figure."""
     # Check if batches have all elements not equal to 0.25
     batch_flags = np.all(W != 0.25, axis=2)
@@ -429,13 +448,15 @@ def plot_filters_and_return_path(W, filters_fig_path):
     # Find the indices of batches with all elements not equal to 0.25
     batch_indices = np.where(batch_flags.sum(axis=-1))[0]
 
-    # Select batches from the original array
-    sub_W = W[batch_indices]
+    # Select batches from the original array:
+    sub_W = W[batch_indices] if threshold else W
+    indices = batch_indices if threshold else list(range(len(W)))
+    # isApple = True if fruit == 'Apple' else False
     num_plot = len(sub_W)
 
     # Plot filters
     fig = plt.figure(figsize=(20, num_plot // 10))
-    W_df = impress.plot_filters(sub_W, fig, num_cols=10, fontsize=12, names=batch_indices)
+    W_df = impress.plot_filters(sub_W, fig, num_cols=10, fontsize=12, names=indices)
 
     fig.savefig(filters_fig_path, format='pdf', dpi=200, bbox_inches='tight')
 
@@ -521,14 +542,14 @@ def saliency_map(X, model, class_index=0):
     grad = tape.gradient(outputs, X)
     return grad
 
-def write_filters_jaspar(output_file, pfm):
+def write_filters_jaspar(output_file, pfm, batch_indices):
 
     # open file for writing
     f = open(output_file, 'w')
+    sub_pfm = pfm[batch_indices]
+    for i, pwm in enumerate(sub_pfm):
 
-    for i, pwm in enumerate(pfm):
-
-        f.write(f">filter_{i} filter_{i}\n")
+        f.write(f">filter_{batch_indices[i]} filter_{batch_indices[i]}\n")
 
         for j, base in enumerate("ACGT"):
 

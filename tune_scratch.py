@@ -119,7 +119,19 @@ def tune_hominid(config: dict):
 
     # Write to the Tune trial directory, not the shared working dir
     tune_trial_dir = Path(session.get_trial_dir())
-
+    # early stopping callback
+    es_callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', #'val_aupr',#
+                                                patience=10,
+                                                verbose=1,
+                                                mode='min',
+                                                restore_best_weights=True)
+    # reduce learning rate callback
+    reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss',
+                                                    factor=0.2,
+                                                    patience=3,
+                                                    min_lr=1e-7,
+                                                    mode='min',
+                                                    verbose=1)
     # train model
     model.fit(
           x_train, y_train,
@@ -129,6 +141,8 @@ def tune_hominid(config: dict):
           shuffle=True,
           validation_data=(x_valid, y_valid),
           callbacks=[
+              es_callback,
+              reduce_lr,
               TuneReportCallback({
                   "pearson_r": "pearson_r",
                   "val_pearson_r": "val_pearson_r",
@@ -150,37 +164,37 @@ def tune_mnist(num_training_iterations):
             metric="val_pearson_r",
             mode="max",
             scheduler=sched,
-            num_samples=200,
+            num_samples=200, 
         ),
         run_config=air.RunConfig(
-            name="tune_hominid_pipeline-exp",
+            name="tune_hominid_v2",
             stop={
                 "val_pearson_r": 0.95,
                 "training_iteration": num_training_iterations
             },
             callbacks=[
             WandbLoggerCallback(
-                project="raytune-hominid_pipeline-exp",
+                project="tune_hominid_v2",
                 log_config=True,
                 upload_checkpoints=True,)]
             ),
         param_space={
-            "conv1_activation": tune.choice(["exponential"]),                     # activation on 1st layer conv
+            "conv1_activation": tune.choice(["exponential", "relu"]),                     # activation on 1st layer conv
             "conv1_batchnorm": tune.choice([True, False]),                       # batchnorm on 1st layer conv
             "conv1_channel_weight": tune.choice(["softconv", "se", None]), # soft attention on channels (1st layer conv)
-            "conv1_dropout": 0.2,
-            "conv1_filters": tune.choice([64, 96, 128, 256, 512]),
-            "conv1_kernel_size": tune.choice([15, 19]),
+            "conv1_dropout": tune.choice([0.0, 0.1, 0.2, 0.3]), # dropout is POWERFUL
+            "conv1_filters": tune.choice([64, 96, 128, 256]),
+            "conv1_kernel_size": tune.choice([11, 15, 19]),
             "conv1_pool_type": tune.choice(["attention", "max_pool"]),
-            "conv1_max_pool": tune.choice([4, 8, 10, 20]),                 # if conv1 pool = max pool
+            "conv1_max_pool": tune.choice([0, 4, 8, 10, 20]),  # pool can't be 0!               # if conv1 pool = max pool
             "conv1_attention_pool_size": tune.choice(range(40)),           # if conv1 pool = attention pool
             "conv1_type": tune.choice(["pw", "standard"]),                 # additive vs pairwise 1st conv layer
             "dense_activation": "relu",
             "dense_batchnorm": True,
             "dense_dropout": tune.choice([[0.3, 0.3], [0.4, 0.4], [0.5, 0.5]]),
-            "dense_units": tune.choice([[128, 128], [256, 128],[512, 256], [256, 256], [512, 512],[1024, 512]]),
+            "dense_units": tune.choice([[128, 128], [256, 128],[512, 256], [256, 256], [512, 512]]),
             "mha_d_model": tune.choice([96, 192]),
-            "mha_dropout": 0.1,
+            "mha_dropout": tune.choice([0.0, 0.1, 0.2]),
             "mha_head_type": tune.choice(["pool", "task_specific"]),       # shared vs task specific atttention
             "mha_heads": tune.choice([4, 8]),
             "mha_layernorm": False,

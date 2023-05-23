@@ -1,6 +1,6 @@
 import tensorflow as tf
 import tensorflow.keras as keras
-from hominid import layers
+import layers
 from tensorflow.keras.regularizers import l1, l2, l1_l2
 
 
@@ -93,7 +93,8 @@ def base_model(
     if conv1_pool_type == 'attention':
         nn = AttentionPooling(conv1_attention_pool_size)(nn)
     else:
-        nn = keras.layers.MaxPooling1D(conv1_max_pool, name='conv1_maxpool')(nn)
+        if (conv1_max_pool != 0):
+            nn = keras.layers.MaxPooling1D(conv1_max_pool, name='conv1_maxpool')(nn)
     nn = keras.layers.Dropout(conv1_dropout, name='conv1_dropout')(nn)
 
     # multi-head attention layer
