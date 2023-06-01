@@ -1,17 +1,8 @@
-import os
-# os.environ['CUDA_VISIBLE_DEVICES'] = '2'
-import click
-import json
-import shutil
 from pathlib import Path
-import pandas as pd
 from ray import tune
 from ray.tune.schedulers import AsyncHyperBandScheduler
-from ray.tune.integration.keras import TuneReportCallback
 from ray.air import session
 import tensorflow as tf
-import wandb
-from wandb.keras import WandbCallback
 import yaml
 
 import utils, model_zoo
@@ -73,9 +64,10 @@ class HominidTuner:
             print("Building model...")
             return model_zoo.base_model(**self.config)
 
-    def __init__(self, config, epochs=60, tuning_mode=False, save_path=None):
+    def __init__(self, config, epochs=60, tuning_mode=False, save_path=None, subsample=False):
         self.config = config
-        self.data_processor = self.DataProcessor(subsample=False)
+        self.subsample = subsample
+        self.data_processor = self.DataProcessor(subsample=self.subsample)
         self.model_builder = self.ModelBuilder(config)
         self.epochs = epochs
         self.hyperparameters = Hyperparameters().get()
@@ -94,9 +86,8 @@ class HominidTuner:
 
         es_callback = self._get_early_stopping_callback()
         reduce_lr = self._get_reduce_lr_callback()
-        wandb_callback = WandbCallback(save_model=(False))
 
-        callbacks = [es_callback, reduce_lr, wandb_callback]
+        callbacks = [es_callback, reduce_lr]
 
         if self.tuning_mode:
             tune_report_callback = self._get_tune_report_callback()
@@ -106,6 +97,7 @@ class HominidTuner:
             x_train, y_train,
             epochs=self.epochs,
             batch_size=128,
+            # verbose=0,
             shuffle=True,
             validation_data=(x_valid, y_valid),
             callbacks=callbacks
@@ -121,50 +113,22 @@ class HominidTuner:
         df = pd.read_csv(f'{self.save_path}/evaluation/model_performance.csv')
         return df
 
+    def evaluate_model(self):
 
-    def _get_early_stopping_callback(self):
-        return tf.keras.callbacks.EarlyStopping(
-            monitor='val_loss', patience=10, verbose=1,
-            mode='min', restore_best_weights=True
-        )
+        print(f"Loading model and dataset!")
 
-    def _get_reduce_lr_callback(self):
-        return tf.keras.callbacks.ReduceLROnPlateau(
-            monitor='val_loss', factor=0.2, patience=3, min_lr=1e-7, mode='min', verbose=1
-        )
-
-    def _get_tune_report_callback(self):
-        return TuneReportCallback({"pearson_r": "pearson_r", "val_pearson_r": "val_pearson_r"})
-
-    def execute(self):
-
-        # Load the data
-        x_train, y_train = self.data_processor.load_data("train")
-        x_valid, y_valid = self.data_processor.load_data("valid")
         x_test, y_test = self.data_processor.load_data("test")
-
-        # update config
-        (L, A), output_shape = self.data_processor.shape_info(x_train, y_train)
-        self.update_config("input_shape", (L, A))
-        self.update_config("output_shape", output_shape)
 
         # Build the model
         model = self.model_builder.build_model()
 
-        # Train the model
-        model = self.compile_and_train_model(model, x_train, y_train, x_valid, y_valid)
-
-        print("Done training the model!")
-
-        # save model weights
-        if self.tuning_mode:
-            self.save_path = f'{Path(session.get_trial_dir())}'
-
-        model.save_weights(f'{self.save_path}/weights')
-
-        # save the model config
-        with open(os.path.join(self.save_path, 'config.yaml'), 'w') as file:
-            documents = yaml.dump(self.config, file)
+        model.compile(
+            tf.keras.optimizers.Adam(lr=0.001),
+            loss='mse',
+            metrics=[utils.Spearman, utils.pearson_r]
+            )
+        print(model.summary())
+        model.load_weights(f'{self.save_path}/weights')
 
         # After training, you might want to evaluate your model:
         print(f"Evaluating model!")
@@ -184,6 +148,79 @@ class HominidTuner:
         }]
         df = pd.DataFrame(data)
         pd.DataFrame(df).to_csv(f'{evaluation_path}/model_performance.csv', index=False)
+        return df
+
+
+    def _get_early_stopping_callback(self):
+        return tf.keras.callbacks.EarlyStopping(
+            monitor='val_loss', patience=10, verbose=1,
+            mode='min', restore_best_weights=True
+        )
+
+    def _get_reduce_lr_callback(self):
+        return tf.keras.callbacks.ReduceLROnPlateau(
+            monitor='val_loss', factor=0.2, patience=3, min_lr=1e-7, mode='min', verbose=1
+        )
+
+    def _get_tune_report_callback(self):
+        return TuneReportCallback({"pearson_r": "pearson_r", "val_pearson_r": "val_pearson_r"})
+
+
+
+    def execute(self):
+
+        try:
+            # Load the data
+            x_train, y_train = self.data_processor.load_data("train")
+            x_valid, y_valid = self.data_processor.load_data("valid")
+            x_test, y_test = self.data_processor.load_data("test")
+
+            # update config
+            (L, A), output_shape = self.data_processor.shape_info(x_train, y_train)
+            self.update_config("input_shape", (L, A))
+            self.update_config("output_shape", output_shape)
+
+            # Build the model
+            model = self.model_builder.build_model()
+
+            # Train the model
+            model = self.compile_and_train_model(model, x_train, y_train, x_valid, y_valid)
+
+            print("Done training the model!")
+
+        except KeyboardInterrupt:
+            print("Training interrupted")
+
+        finally:
+            # save model weights
+            if self.tuning_mode:
+                self.save_path = f'{Path(session.get_trial_dir())}'
+
+            model.save_weights(f'{self.save_path}/weights')
+
+            # save the model config
+            with open(os.path.join(self.save_path, 'config.yaml'), 'w') as file:
+                documents = yaml.dump(self.config, file)
+
+            # After training, you might want to evaluate your model:
+            print(f"Evaluating model!")
+            evaluation_path = f"{self.save_path}/evaluation"
+            Path(evaluation_path).mkdir(parents=True, exist_ok=True)
+
+            mse_dev, pcc_dev, scc_dev = utils.evaluate_model(model, x_test, y_test, "Dev")
+            mse_hk, pcc_hk, scc_hk = utils.evaluate_model(model, x_test, y_test, "Hk")
+
+            data = [{
+                'MSE_dev':  mse_dev,
+                'PCC_dev':  pcc_dev,
+                'SCC_dev':  scc_dev,
+                'MSE_hk':  mse_hk,
+                'PCC_hk':  pcc_hk,
+                'SCC_hk':  scc_hk,
+            }]
+            df = pd.DataFrame(data)
+            pd.DataFrame(df).to_csv(f'{evaluation_path}/model_performance.csv', index=False)
+
 
 
     def tune(self, num_training_iterations):
@@ -252,32 +289,8 @@ class HominidTuner:
                             from_saved=from_saved
                         )
 
+#         utils.make_directory("/home/chandana/projects/hominid_pipeline/temp/tune_v2")
+#             shutil.copy("-r", params_path, "/home/chandana/projects/hominid_pipeline/temp/tune_v2")
 
         print("Finished interpreting filters!")
         return
-
-
-
-@click.command()
-@click.option("--config_file", type=str)
-def main(config_file: str):
-
-
-    save_path = config_file.split("config.yaml")[0]
-    config = load_config(config_file)
-
-    wandb_project = "train_hominid"
-    wandb.init(project=wandb_project, name=save_path, config=config)
-
-    tuner = HominidTuner(config, epochs=100, tuning_mode=False, save_path=save_path)
-
-    # train model
-    tuner.execute()
-
-    # interpret model
-    # tuner.interpret_model(layer=2)
-    # tuner.interpret_model(layer=3)
-
-
-if __name__ == "__main__":
-    main()
