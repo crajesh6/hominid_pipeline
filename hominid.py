@@ -69,9 +69,10 @@ class HominidTuner:
             print("Building model...")
             return model_zoo.base_model(**self.config)
 
-    def __init__(self, config, epochs=60, tuning_mode=False, save_path=None):
+    def __init__(self, config, epochs=60, tuning_mode=False, save_path=None, subsample=False):
         self.config = config
-        self.data_processor = self.DataProcessor(subsample=False)
+        self.subsample = subsample
+        self.data_processor = self.DataProcessor(subsample=self.subsample)
         self.model_builder = self.ModelBuilder(config)
         self.epochs = epochs
         self.hyperparameters = Hyperparameters().get()
@@ -101,7 +102,7 @@ class HominidTuner:
             x_train, y_train,
             epochs=self.epochs,
             batch_size=128,
-            verbose=0,
+            # verbose=0,
             shuffle=True,
             validation_data=(x_valid, y_valid),
             callbacks=callbacks
@@ -169,54 +170,62 @@ class HominidTuner:
     def _get_tune_report_callback(self):
         return TuneReportCallback({"pearson_r": "pearson_r", "val_pearson_r": "val_pearson_r"})
 
+
+
     def execute(self):
 
-        # Load the data
-        x_train, y_train = self.data_processor.load_data("train")
-        x_valid, y_valid = self.data_processor.load_data("valid")
-        x_test, y_test = self.data_processor.load_data("test")
+        try:
+            # Load the data
+            x_train, y_train = self.data_processor.load_data("train")
+            x_valid, y_valid = self.data_processor.load_data("valid")
+            x_test, y_test = self.data_processor.load_data("test")
 
-        # update config
-        (L, A), output_shape = self.data_processor.shape_info(x_train, y_train)
-        self.update_config("input_shape", (L, A))
-        self.update_config("output_shape", output_shape)
+            # update config
+            (L, A), output_shape = self.data_processor.shape_info(x_train, y_train)
+            self.update_config("input_shape", (L, A))
+            self.update_config("output_shape", output_shape)
 
-        # Build the model
-        model = self.model_builder.build_model()
+            # Build the model
+            model = self.model_builder.build_model()
 
-        # Train the model
-        model = self.compile_and_train_model(model, x_train, y_train, x_valid, y_valid)
+            # Train the model
+            model = self.compile_and_train_model(model, x_train, y_train, x_valid, y_valid)
 
-        print("Done training the model!")
+            print("Done training the model!")
 
-        # save model weights
-        if self.tuning_mode:
-            self.save_path = f'{Path(session.get_trial_dir())}'
+        except KeyboardInterrupt:
+            print("Training interrupted")
 
-        model.save_weights(f'{self.save_path}/weights')
+        finally:
+            # save model weights
+            if self.tuning_mode:
+                self.save_path = f'{Path(session.get_trial_dir())}'
 
-        # save the model config
-        with open(os.path.join(self.save_path, 'config.yaml'), 'w') as file:
-            documents = yaml.dump(self.config, file)
+            model.save_weights(f'{self.save_path}/weights')
 
-        # After training, you might want to evaluate your model:
-        print(f"Evaluating model!")
-        evaluation_path = f"{save_path}/evaluation"
-        Path(evaluation_path).mkdir(parents=True, exist_ok=True)
+            # save the model config
+            with open(os.path.join(self.save_path, 'config.yaml'), 'w') as file:
+                documents = yaml.dump(self.config, file)
 
-        mse_dev, pcc_dev, scc_dev = utils.evaluate_model(model, x_test, y_test, "Dev")
-        mse_hk, pcc_hk, scc_hk = utils.evaluate_model(model, x_test, y_test, "Hk")
+            # After training, you might want to evaluate your model:
+            print(f"Evaluating model!")
+            evaluation_path = f"{self.save_path}/evaluation"
+            Path(evaluation_path).mkdir(parents=True, exist_ok=True)
 
-        data = [{
-            'MSE_dev':  mse_dev,
-            'PCC_dev':  pcc_dev,
-            'SCC_dev':  scc_dev,
-            'MSE_hk':  mse_hk,
-            'PCC_hk':  pcc_hk,
-            'SCC_hk':  scc_hk,
-        }]
-        df = pd.DataFrame(data)
-        pd.DataFrame(df).to_csv(f'{evaluation_path}/model_performance.csv', index=False)
+            mse_dev, pcc_dev, scc_dev = utils.evaluate_model(model, x_test, y_test, "Dev")
+            mse_hk, pcc_hk, scc_hk = utils.evaluate_model(model, x_test, y_test, "Hk")
+
+            data = [{
+                'MSE_dev':  mse_dev,
+                'PCC_dev':  pcc_dev,
+                'SCC_dev':  scc_dev,
+                'MSE_hk':  mse_hk,
+                'PCC_hk':  pcc_hk,
+                'SCC_hk':  scc_hk,
+            }]
+            df = pd.DataFrame(data)
+            pd.DataFrame(df).to_csv(f'{evaluation_path}/model_performance.csv', index=False)
+
 
 
     def tune(self, num_training_iterations):

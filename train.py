@@ -1,5 +1,5 @@
 import os
-# os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 import click
 import json
 import shutil
@@ -10,6 +10,8 @@ from ray.tune.schedulers import AsyncHyperBandScheduler
 from ray.tune.integration.keras import TuneReportCallback
 from ray.air import session
 import tensorflow as tf
+import wandb
+from wandb.keras import WandbCallback
 import yaml
 
 import utils, model_zoo
@@ -92,8 +94,9 @@ class HominidTuner:
 
         es_callback = self._get_early_stopping_callback()
         reduce_lr = self._get_reduce_lr_callback()
+        wandb_callback = WandbCallback(save_model=(False))
 
-        callbacks = [es_callback, reduce_lr]
+        callbacks = [es_callback, reduce_lr, wandb_callback]
 
         if self.tuning_mode:
             tune_report_callback = self._get_tune_report_callback()
@@ -259,8 +262,12 @@ class HominidTuner:
 @click.option("--config_file", type=str)
 def main(config_file: str):
 
+
     save_path = config_file.split("config.yaml")[0]
     config = load_config(config_file)
+
+    wandb_project = "train_hominid"
+    wandb.init(project=wandb_project, name=save_path, config=config)
 
     tuner = HominidTuner(config, epochs=100, tuning_mode=False, save_path=save_path)
 

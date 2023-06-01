@@ -37,7 +37,7 @@ def base_model(
     conv1_batchnorm,
     conv1_channel_weight,
     conv1_dropout,
-    conv1_filters,
+    conv1_filters,   
     conv1_kernel_size,
     conv1_pool_type,
     conv1_attention_pool_size,
@@ -54,7 +54,8 @@ def base_model(
     mha_heads,
     mha_layernorm,
     output_activation,
-    output_shape
+    output_shape,
+    softconv_filters=128,
     ):
 
     diag = l2(1e-6)
@@ -88,7 +89,7 @@ def base_model(
             nn = nn * x
 
     elif conv1_channel_weight == 'softconv':
-            nn = tf.keras.layers.Conv1D(filters=128, kernel_size=1, padding='same', use_bias=True, name='softconv_conv')(nn)
+            nn = tf.keras.layers.Conv1D(filters=softconv_filters, kernel_size=1, padding='same', use_bias=True, name='softconv_conv')(nn) # change this!
             nn = keras.layers.Activation('relu', name='softconv_activation')(nn)
     if conv1_pool_type == 'attention':
         nn = AttentionPooling(conv1_attention_pool_size)(nn)

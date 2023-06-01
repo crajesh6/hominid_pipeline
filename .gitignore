@@ -9,6 +9,7 @@ temp/
 wandb/
 experiments/
 save/
+results/
 
 interpret_hominid.ipynb
 refactor.ipynb
