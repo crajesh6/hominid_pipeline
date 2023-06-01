@@ -4,7 +4,7 @@ import click
 import sys
 from pathlib import Path
 
-import hominid
+from hominid_pipeline import hominid
 
 
 

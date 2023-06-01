@@ -17,7 +17,6 @@ import wandb
 from wandb.keras import WandbCallback
 import yaml
 
-import model_zoo, utils # remove the from
 import logomaker
 import tfomics
 from tfomics import impress, explain, moana
@@ -121,35 +120,6 @@ def load_deepstarr_data(
             y = y[:10000]
     return x, y
 
-def hominid_pipeline(config):
-
-    # ==============================================================================
-    # Load dataset
-    # ==============================================================================
-
-    x_train, y_train = load_deepstarr_data("train", subsample=False)
-    x_valid, y_valid = load_deepstarr_data("valid", subsample=False)
-    x_test, y_test = load_deepstarr_data("test", subsample=False)
-
-    N, L, A = x_train.shape
-    output_shape = y_train.shape[-1]
-
-    print(f"Input shape: {N, L, A}. Output shape: {output_shape}")
-
-    config["input_shape"] = (L, A)
-    config["output_shape"] = output_shape
-
-    print(output_shape)
-
-    # ==============================================================================
-    # Build model
-    # ==============================================================================
-
-    print("Building model...")
-
-    model = model_zoo.base_model(**config)
-
-    return x_train, y_train, x_valid, y_valid, x_test, y_test, model
 
 def absmaxND(a, axis=None):
     amax = np.max(a, axis)

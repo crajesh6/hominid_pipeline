@@ -5,7 +5,7 @@ from ray.air import session
 import tensorflow as tf
 import yaml
 
-import utils, model_zoo
+from hominid_pipeline import utils, model_zoo
 
 class Hyperparameters:
     def __init__(self):

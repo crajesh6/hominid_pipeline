@@ -2,7 +2,7 @@
 # os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 import click
 
-import hominid_pipeline
+from hominid_pipeline import hominid
 
 
 @click.command()
@@ -10,9 +10,9 @@ import hominid_pipeline
 def main(config_file: str):
 
     save_path = config_file.split("config.yaml")[0]
-    config = hominid_pipeline.load_config(config_file)
+    config = hominid.load_config(config_file)
 
-    tuner = hominid_pipeline.HominidTuner(
+    tuner = hominid.HominidTuner(
                                 config,
                                 epochs=100,
                                 tuning_mode=False,

@@ -1,6 +1,6 @@
 import tensorflow as tf
 import tensorflow.keras as keras
-import layers
+from hominid_pipeline import layers
 from tensorflow.keras.regularizers import l1, l2, l1_l2
 
 
@@ -37,7 +37,7 @@ def base_model(
     conv1_batchnorm,
     conv1_channel_weight,
     conv1_dropout,
-    conv1_filters,   
+    conv1_filters,
     conv1_kernel_size,
     conv1_pool_type,
     conv1_attention_pool_size,
