@@ -1,7 +1,10 @@
+import pandas as pd
 from pathlib import Path
 from ray import tune
 from ray.tune.schedulers import AsyncHyperBandScheduler
 from ray.air import session
+import sh
+import pickle
 import tensorflow as tf
 import yaml
 
@@ -293,4 +296,47 @@ class HominidTuner:
 #             shutil.copy("-r", params_path, "/home/chandana/projects/hominid_pipeline/temp/tune_v2")
 
         print("Finished interpreting filters!")
+        return
+
+
+
+    def calculate_saliency_maps(self, class_index=0): # rewrite this so that the actual computations are in utils!
+        print(f"Loading model and dataset!")
+
+        x_test, y_test = self.data_processor.load_data("test")
+
+        # Build the model
+        model = self.model_builder.build_model()
+
+        model.compile(
+            tf.keras.optimizers.Adam(lr=0.001),
+            loss='mse',
+            metrics=[utils.Spearman, utils.pearson_r]
+            )
+        print(model.summary())
+        model.load_weights(f'{self.save_path}/weights')
+
+        print(f"Calculating saliency maps!")
+        saliency_path = f"{self.save_path}/saliency"
+        Path(saliency_path).mkdir(parents=True, exist_ok=True)
+
+        # Open the file to append saliency scores
+        saliency_file = f'{saliency_path}/saliency_maps_{class_index}.pkl'
+        batch_size = 64
+
+        # Remove the file if it already exists:
+        path = Path(saliency_file)
+        if path.is_file():
+            sh.rm(saliency_file)
+
+        with open(saliency_file, 'ab') as file:
+            # Iterate over batches
+            for batch in utils.batch_generator(x_test, batch_size):
+                # Get predictions for the batch
+                saliency_scores = utils.saliency_map(batch, model, class_index=class_index)
+
+                # Append predictions to the pickle file
+                pickle.dump(saliency_scores, file)
+
+        print("Finished calculating saliency maps!")
         return
