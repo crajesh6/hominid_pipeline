@@ -1,4 +1,4 @@
-# import os
+import os
 # os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 import click
 
@@ -16,7 +16,9 @@ def main(config_file: str):
                                 config,
                                 epochs=100,
                                 tuning_mode=False,
-                                save_path=save_path
+                                save_path=save_path,
+                                dataset="deepstarr",
+                                subsample=False
                                 )
 
     # train model

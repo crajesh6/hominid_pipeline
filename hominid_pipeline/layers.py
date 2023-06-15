@@ -1,8 +1,8 @@
+import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.python.framework import tensor_shape
 import tensorflow_probability as tfp
-
 
 
 class PairwiseConv1D(keras.layers.Conv1D):

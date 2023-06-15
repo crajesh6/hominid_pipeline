@@ -96,6 +96,79 @@ def evaluate_model(model, X, Y, task):
 
     return mse, pcc, scc
 
+def evaluate_model_deepstarr(model, x_test, y_test, evaluation_path):
+
+    mse_dev, pcc_dev, scc_dev = evaluate_model(model, x_test, y_test, "Dev")
+    mse_hk, pcc_hk, scc_hk = evaluate_model(model, x_test, y_test, "Hk")
+
+    data = [{
+        'MSE_dev':  mse_dev,
+        'PCC_dev':  pcc_dev,
+        'SCC_dev':  scc_dev,
+        'MSE_hk':  mse_hk,
+        'PCC_hk':  pcc_hk,
+        'SCC_hk':  scc_hk,
+    }]
+    df = pd.DataFrame(data)
+    pd.DataFrame(df).to_csv(f'{evaluation_path}/model_performance.csv', index=False)
+    return df
+
+def get_cor(data):
+    samples = ['all', 'At', 'Zm', 'Sb']
+
+    rsquare = []
+    spearman = []
+
+    for species in samples:
+        if species == 'all':
+            data_filt = data
+        else:
+            data_filt = data[data['sample.name'] == species]
+
+        rsquare.append(round(data_filt['enrichment'].corr(data_filt['prediction'])**2, 2))
+        spearman.append(round(data_filt['enrichment'].corr(data_filt['prediction'], method = 'spearman'), 2))
+
+    return pd.DataFrame({'sample.name' : samples, 'spearman' : spearman, 'rsquare' : rsquare})
+
+def evaluate_model_plantstarr(model, x_test, y_test, evaluation_path, dataset="leaf"):
+
+    test_df_path = f"/home/chandana/projects/deepstarr/data/CNN_test_{dataset}.tsv"
+    df = pd.read_csv(test_df_path, sep='\t', header=0)
+
+    pred = model.predict(x_test, batch_size=512)
+    df['prediction'] = pred
+    df = df.rename(columns = {'sp' : 'sample.name'}).sample(frac=1)
+
+    df = get_cor(df)
+
+    print(f'Training data in plant {dataset} system:')
+    print(df)
+
+    pd.DataFrame(df).to_csv(f'{evaluation_path}/model_performance.csv', index=False)
+    return df
+
+
+def load_plantstarr_data(
+        data_split: str,
+        data_dir='/home/chandana/projects/deepstarr/data/plantstarr_data.h5',
+        subsample: bool = False,
+        dataset: str = "leaf"
+    ) -> (np.ndarray, np.ndarray):
+    """Load dataset"""
+
+    # load sequences and labels
+    if data_split == "valid":
+        return None, None
+
+    with h5py.File(data_dir, "r") as f:
+        x = f[dataset][f'x_{data_split}'][:]
+        y = f[dataset][f'y_{data_split}'][:]
+    if subsample:
+        x = x[:int(x.shape[0] * .2)]
+        y = y[:int(x.shape[0] * .2)]
+    return x, y
+
+
 def load_deepstarr_data(
         data_split: str,
         data_dir='/home/chandana/projects/hominid_pipeline/data/deepstarr_data.h5',
@@ -120,6 +193,14 @@ def load_deepstarr_data(
             y = y[:10000]
     return x, y
 
+def load_data(dataset: str, data_split: str, subsample: bool):
+
+    if dataset == "deepstarr":
+        return load_deepstarr_data(data_split=data_split, subsample=subsample)
+    elif dataset == "plantstarr":
+        return load_plantstarr_data(data_split=data_split, subsample=subsample)
+    else:
+        raise ValueError(f"Invalid dataset: {dataset}")
 
 def absmaxND(a, axis=None):
     amax = np.max(a, axis)
@@ -372,7 +453,7 @@ def calculate_filter_activations(
         sub_W = W[batch_indices]
 
         # Clip filters for TomTom
-        W_clipped = utils.clip_filters(sub_W, threshold=0.5, pad=3)
+        W_clipped = clip_filters(sub_W, threshold=0.5, pad=3)
         moana.meme_generate(W_clipped, output_file=f"{filters_path}/filters_{layer}.txt")
 
         # save filter PWMs to an h5 file

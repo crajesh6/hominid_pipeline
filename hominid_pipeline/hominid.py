@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 from pathlib import Path
 from ray import tune
@@ -46,11 +47,18 @@ def load_config(config_path):
 
 class HominidTuner:
     class DataProcessor:
-        def __init__(self, subsample=False):
+        def __init__(self, dataset="deepstarr", subsample=False):
+            self.dataset = dataset
             self.subsample = subsample
 
         def load_data(self, data_split):
-            return utils.load_deepstarr_data(data_split, subsample=self.subsample)
+
+            return utils.load_data(
+                                dataset=self.dataset,
+                                data_split=data_split,
+                                subsample=self.subsample
+                            )
+            # return utils.load_data(self.dataset, **dataset_kwargs)
 
         @staticmethod
         def shape_info(x_data, y_data):
@@ -67,10 +75,11 @@ class HominidTuner:
             print("Building model...")
             return model_zoo.base_model(**self.config)
 
-    def __init__(self, config, epochs=60, tuning_mode=False, save_path=None, subsample=False):
+    def __init__(self, config, epochs=60, tuning_mode=False, save_path=None, subsample=False, dataset="deepstarr"):
         self.config = config
         self.subsample = subsample
-        self.data_processor = self.DataProcessor(subsample=self.subsample)
+        self.dataset = dataset
+        self.data_processor = self.DataProcessor(dataset=self.dataset, subsample=self.subsample)
         self.model_builder = self.ModelBuilder(config)
         self.epochs = epochs
         self.hyperparameters = Hyperparameters().get()
@@ -96,15 +105,23 @@ class HominidTuner:
             tune_report_callback = self._get_tune_report_callback()
             callbacks.append(tune_report_callback)
 
-        model.fit(
-            x_train, y_train,
-            epochs=self.epochs,
-            batch_size=128,
-            # verbose=0,
-            shuffle=True,
-            validation_data=(x_valid, y_valid),
-            callbacks=callbacks
-        )
+        if self.dataset == "plantstarr": # this means it's plantstarr data!
+            model.fit(x_train, y_train,
+                    epochs=self.epochs, #100,
+                    batch_size=128,
+                    shuffle=True,
+                    validation_split=0.1,
+                    callbacks=callbacks)
+        if self.dataset == "deepstarr": # if it's deepstarr data
+            model.fit(
+                x_train, y_train,
+                epochs=self.epochs,
+                batch_size=128,
+                # verbose=0,
+                shuffle=True,
+                validation_data=(x_valid, y_valid),
+                callbacks=callbacks
+            )
         return model
 
     def update_config(self, key, value):
@@ -138,19 +155,11 @@ class HominidTuner:
         evaluation_path = f"{self.save_path}/evaluation"
         Path(evaluation_path).mkdir(parents=True, exist_ok=True)
 
-        mse_dev, pcc_dev, scc_dev = utils.evaluate_model(model, x_test, y_test, "Dev")
-        mse_hk, pcc_hk, scc_hk = utils.evaluate_model(model, x_test, y_test, "Hk")
+        if self.dataset == "deepstarr":
+            df = utils.evaluate_model_deepstarr(model, x_test, y_test, evaluation_path)
 
-        data = [{
-            'MSE_dev':  mse_dev,
-            'PCC_dev':  pcc_dev,
-            'SCC_dev':  scc_dev,
-            'MSE_hk':  mse_hk,
-            'PCC_hk':  pcc_hk,
-            'SCC_hk':  scc_hk,
-        }]
-        df = pd.DataFrame(data)
-        pd.DataFrame(df).to_csv(f'{evaluation_path}/model_performance.csv', index=False)
+        if self.dataset == "plantstarr":
+            df = utils.evaluate_model_plantstarr(model, x_test, y_test, evaluation_path)
         return df
 
 
@@ -207,22 +216,9 @@ class HominidTuner:
 
             # After training, you might want to evaluate your model:
             print(f"Evaluating model!")
-            evaluation_path = f"{self.save_path}/evaluation"
-            Path(evaluation_path).mkdir(parents=True, exist_ok=True)
+            self.evaluate_model()
 
-            mse_dev, pcc_dev, scc_dev = utils.evaluate_model(model, x_test, y_test, "Dev")
-            mse_hk, pcc_hk, scc_hk = utils.evaluate_model(model, x_test, y_test, "Hk")
-
-            data = [{
-                'MSE_dev':  mse_dev,
-                'PCC_dev':  pcc_dev,
-                'SCC_dev':  scc_dev,
-                'MSE_hk':  mse_hk,
-                'PCC_hk':  pcc_hk,
-                'SCC_hk':  scc_hk,
-            }]
-            df = pd.DataFrame(data)
-            pd.DataFrame(df).to_csv(f'{evaluation_path}/model_performance.csv', index=False)
+            return
 
 
 
@@ -292,8 +288,6 @@ class HominidTuner:
                             from_saved=from_saved
                         )
 
-#         utils.make_directory("/home/chandana/projects/hominid_pipeline/temp/tune_v2")
-#             shutil.copy("-r", params_path, "/home/chandana/projects/hominid_pipeline/temp/tune_v2")
 
         print("Finished interpreting filters!")
         return
